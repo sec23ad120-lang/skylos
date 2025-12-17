@@ -1,58 +1,107 @@
-from fastapi import FastAPI, Request
-from app.security1 import check_access, encrypt_data
-from app.ai.anomaly_detector import AnomalyDetector
-from app.database import get_db_session, log_event
-from app.security import data_encryption
-app = FastAPI(title="Skylos")
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import Optional
 
-@app.post("/log_query/")
-async def log_query(request: Request):
-    data = await request.json()
-    db_session = get_db_session()
-    # Logging and anomaly check
-    is_anomaly = AnomalyDetector(data)
-    log_event(db_session, data, is_anomaly)
-    if is_anomaly:
-        # Respond to threat automatically
-        return {"status": "alert", "message": "Anomaly detected. Automated response triggered."}
+app = FastAPI(
+    title="Hybrid Intrusion Detection API",
+    description="Simple API to ingest events, access data, block IPs, and send feedback.",
+    version="1.0.0",
+)
+
+
+# ---------- Data models ----------
+
+class Event(BaseModel):
+    source_ip: str
+    description: str
+    timestamp: str
+    failed_logins: int
+    successful_logins: int
+    bytes_in: int
+    bytes_out: int
+
+
+class AccessRequest(BaseModel):
+    user: str
+    resource: str
+    action: str
+    extra: Optional[str] = None
+
+
+class BlockRequest(BaseModel):
+    ip: str
+    reason: Optional[str] = None
+
+
+class FeedbackRequest(BaseModel):
+    event_id: str
+    is_true_positive: bool
+    comment: Optional[str] = None
+
+
+# ---------- Simple root & health ----------
+
+@app.get("/")
+async def root():
+    return {"message": "Hybrid IDS API is running"}
+
+
+@app.get("/health")
+async def health():
     return {"status": "ok"}
 
+
+# ---------- POST endpoints ----------
+
+@app.post("/events/ingest")
+async def ingest_event(event: Event):
+    # TODO: plug in your hybrid anomaly detection logic here
+    anomaly = (
+        event.failed_logins > 10
+        or event.bytes_in > 1000000
+        or "attack" in event.description.lower()
+    )
+
+    decision = "block" if anomaly else "allow"
+
+    return {
+        "event": event,
+        "anomaly": anomaly,
+        "decision": decision,
+        "message": "Event processed by hybrid IDS",
+    }
+
+
 @app.post("/access_data/")
-async def access_data(request: Request):
-    data = await request.json()
-    if not check_access(data["user"], data["resource"]):
-        return {"status": "denied"}
-    # Encrypt before responding
-    encrypted = encrypt_data(data["payload"])
-    return {"status": "success", "data": encrypted}
+async def access_data(body: AccessRequest):
+    # TODO: replace with your real access control logic
+    allowed = body.action.lower() in ["read", "view"]
 
-from fastapi import APIRouter
-from app.ai.predictive_analytics import PredictiveAnalytics
-
-router = APIRouter()
-
-predictive_analytics = PredictiveAnalytics()
+    return {
+        "user": body.user,
+        "resource": body.resource,
+        "action": body.action,
+        "allowed": allowed,
+        "reason": "Only read/view allowed in demo",
+    }
 
 
-@router.get("/predict_anomalies/")
-async def predict_anomalies(days_ahead: int):
-    count = predictive_analytics.predict(days_ahead)
-    return {"predicted_anomaly_count": count}
+@app.post("/block_ip/")
+async def block_ip(body: BlockRequest):
+    # TODO: here you would integrate with firewall or blocklist
+    return {
+        "ip": body.ip,
+        "blocked": True,
+        "reason": body.reason or "Blocked by IDS policy",
+    }
 
-from app.security.data_encryption import DataEncryption
 
-encryptor = DataEncryption()
-@app.post("/access_data/")
-async def access_data(request: Request):
-    data = await request.json()
-    if not check_access(data["user"], data["resource"]):
-        return {"status": "denied"}
-    # Encrypt before responding
-    encrypted = encryptor.encrypt(data["payload"].encode())
-    return {"status": "success", "data": encrypted.decode()}
-
-@app.get("/decrypt_data/")
-async def decrypt_data(request: Request):
-    encrypted_payload = (await request.json())["encrypted"]
-    decrypted = encryptor.decrypt(encrypted_payload.encode()).decode()
-    return {"decrypted_data": decrypted}
+@app.post("/feedback/")
+async def feedback(body: FeedbackRequest):
+    # TODO: here you would log feedback to a database to retrain/tune the model
+    return {
+        "event_id": body.event_id,
+        "is_true_positive": body.is_true_positive,
+        "comment": body.comment,
+        "status": "feedback_received",
+    }
