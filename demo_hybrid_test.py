@@ -26,4 +26,3 @@ print("Attack event anomalous? ", is_anomaly(attack_event))
 # Also run full pipeline (this will call AutomatedResponse for anomalies)
 process_event(normal_event)
 process_event(attack_event)
-#fdhfd
